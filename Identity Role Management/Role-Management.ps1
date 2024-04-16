@@ -50,10 +50,10 @@ if (!$RoleName -and !$InputFileCsvPath) {
     return
 }
 
-# Check if the user passes only one of AddRole, AddRoleMember, or RemoveRoleMember
-$actionCount = [int]$AddRole.IsPresent + [int]$AddRoleMember.IsPresent + [int]$RemoveRoleMember.IsPresent
+# Check if the user passes only one of AddRole, AddRoleMember, or RemoveRoleMember, or InputFileCsvPath
+$actionCount = [int]$AddRole.IsPresent + [int]$AddRoleMember.IsPresent + [int]$RemoveRoleMember.IsPresent + [int]$InputFileCsvPath.IsPressent
 if ($actionCount -ne 1) {
-    Write-Error "Please pass only one of AddRole, AddRoleMember, or RemoveRoleMember."
+    Write-Error "Please pass only one of AddRole, AddRoleMember, RemoveRoleMember, or InputFileCsvPath."
     return
 }
 
@@ -123,7 +123,7 @@ if (!$token) {
 	$access_token, $token_response = Get-NewOauth2Token $token_url $scope_name $client_id $client_secret
 
 } else {
-    $access_token = $token
+    $access_token = $token['Authorization'] -replace 'Bearer ', ''
 	$client_id = $null
     $client_secret = $null
 }
@@ -381,8 +381,8 @@ if ($InputFileCsvPath) {
 	# Read CSV and process each row
 	$added_pairs = @()
 	Import-Csv -Path $InputFileCsvPath | ForEach-Object {
-		$user = $_.user
-		$role = $_.role
+		$UserName = $_.user
+		$RoleName = $_.role
 		Write-Host $user
 		if ($added_pairs -notcontains @($user, $role)) {
 			$UserId, $DirectoryUUID = Search-DS -username $UserName
