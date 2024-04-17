@@ -53,7 +53,7 @@ if (!$RoleName -and !$InputFileCsvPath) {
 }
 
 # Check if the user passes only one of AddRole, AddRoleMember, or RemoveRoleMember, or InputFileCsvPath
-$actionCount = [int]$AddRole.IsPresent + [int]$AddRoleMember.IsPresent + [int]$RemoveRoleMember.IsPresent + [int]$InputFileCsvPath.IsPressent
+$actionCount = [int]$AddRole.IsPresent + [int]$AddRoleMember.IsPresent + [int]$RemoveRoleMember.IsPresent + [int]$InputFileCsvPath.IsPresent
 if ($actionCount -ne 1) {
     Write-Error "Please pass only one of AddRole, AddRoleMember, RemoveRoleMember, or InputFileCsvPath."
     return
@@ -88,22 +88,73 @@ if (Resolve-DnsName -Name $tenant_url1 -ErrorAction SilentlyContinue) {
 
 # Get New Oauth2 Token only if needed
 # Note, this script only supports OAuth2 Client Credentials Grant (Backend Application flow)
-function Get-NewOauth2Token ($token_url, $scope_name, $client_id, $client_secret){
-    $pair = "$($client_id):$($client_secret)"
-    $encodedCreds = [System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes($pair))
-    $basicAuthValue = "Basic $encodedCreds"
+function Get-OAuth2Token {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$token_url,
+
+        [Parameter(Mandatory = $true)]
+        [string]$scope_name,
+
+        [Parameter(Mandatory = $true)]
+        [string]$client_id,
+
+        [Parameter(Mandatory = $true)]
+        [string]$client_secret
+    )
+
+    $credentials = New-Object System.Management.Automation.PSCredential ($client_id, ($client_secret | ConvertTo-SecureString -AsPlainText -Force))
+    $encodedCredentials = [System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes($credentials.UserName + ':' + ($credentials.GetNetworkCredential()).Password))
+
     $headers = @{
-        Authorization = $basicAuthValue
+        Authorization = "Basic $encodedCredentials"
         'Content-Type' = 'application/x-www-form-urlencoded'
     }
     $body = @{
         grant_type = 'client_credentials'
         scope = $scope_name
     }
-    $response = Invoke-RestMethod -Uri $token_url -Method Post -Body $body -Headers $headers
-    Write-Verbose $response.access_token
-    return $response.access_token, $response
+
+    try {
+        $response = Invoke-RestMethod -Uri $token_url -Method Post -Body $body -Headers $headers
+        $access_token = $response.access_token
+        Write-Verbose "Token acquired successfully"
+        return $access_token
+    } catch {
+        Write-Error "Failed to retrieve OAuth2 token: $_"
+        return $null
+    }
 }
+
+
+function Get-NewOauth2Token {
+    param (
+        [string]$token_url,
+        [string]$scope_name,
+        [string]$client_id,
+        [string]$client_secret
+    )
+    try {
+        $pair = "$client_id:$client_secret"
+        $encodedCreds = [System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes($pair))
+        $basicAuthValue = "Basic $encodedCreds"
+        $headers = @{
+            Authorization = $basicAuthValue
+            'Content-Type' = 'application/x-www-form-urlencoded'
+        }
+        $body = @{
+            grant_type = 'client_credentials'
+            scope = $scope_name
+        }
+        $response = Invoke-RestMethod -Uri $token_url -Method Post -Body $body -Headers $headers
+        return $response.access_token, $response
+    } catch {
+        Write-Error "Failed to retrieve OAuth2 token: $_"
+        return $null
+    }
+}
+
 
 # If token is not provided, prompt for client_id and client_secret
 if (!$token) {
@@ -331,96 +382,44 @@ function Remove-UserFromRole ($UserName, $rolename) {
     }
 }
 
-# Remove user uid to role via role name
-# Deprecated here. Use /Roles/UpdateRoleV2
-function Remove-UserFromRolOld ($userkey, $rolename) {
-    $RoleID = Search-Roles -rolename $rolename
-	$url = "https://" + $tenant_url + "/SaasManage/RemoveUsersAndGroupsFromRole"
-    
-    $payload = @{
-        Users = @($userkey)
-        Name = $roleid
-    }
-    $headers = @{
-        'Content-Type' = 'application/json'
-        Accept = 'application/json, text/html'
-        Authorization = 'Bearer ' + $access_token
-    }
-    $response = Invoke-RestMethod -Uri $url -Method Post -Body ($payload | ConvertTo-Json) -Headers $headers -ContentType 'application/json'
-    if ($response.success) {
-        Write-Host "Removed from $rolename"
-    } else {
-        Write-Host "issue detected: with $userkey ; $roleid"
-        #Write-Host ($response | ConvertTo-Json)
-    }
-}
-
-# Add user uid to role via role name
-# Deprecated here. Use /Roles/UpdateRoleV2
-function Add-UserToRoleOld ($userkey, $rolename) {
-    $RoleID = Search-Roles -rolename $rolename
-	$url = "https://" + $tenant_url + "/SaasManage/AddUsersAndGroupsToRole"
-    
-    $payload = @{
-        Users = @($userkey)
-        Name = $roleid
-    }
-    $headers = @{
-        'Content-Type' = 'application/json'
-        Accept = 'application/json, text/html'
-        Authorization = 'Bearer ' + $access_token
-    }
-    $response = Invoke-RestMethod -Uri $url -Method Post -Body ($payload | ConvertTo-Json) -Headers $headers -ContentType 'application/json'
-    if ($response.success) {
-        Write-Host "Added to $rolename"
-    } else {
-        Write-Host "issue detected: with $userkey ; $roleid"
-        #Write-Host ($response | ConvertTo-Json)
-    }
-}
-
-function Load-Cache {
+function Get-CacheData {
     if (Test-Path $cacheFilePath) {
-        $choice = Read-Host "Cache file found. Do you want to use cached data to skip previously added entries? (Y/N)"
-        if ($choice -eq 'Y') {
-            return Import-Csv -Path $cacheFilePath
+        $useCache = Read-Host "Cache file found. Do you want to use cached data to skip previously processed entries? (Y/N)"
+        if ($useCache -eq 'Y') {
+            return Import-Csv -Path $cacheFilePath | ForEach-Object { "$($_.UserName),$($_.RoleName)" }
         }
     }
-    return @()
+    return @{}
 }
 
-function Save-Cache {
-    Param(
-        [Parameter(Mandatory=$true)]
-        [System.Collections.ArrayList]$Cache
-    )
-
-    $Cache | Export-Csv -Path $cacheFilePath -NoTypeInformation
+function Save-CacheData ($Cache) {
+    $Cache | ConvertFrom-StringData | Export-Csv -Path $cacheFilePath -NoTypeInformation
 }
 
-if ($InputFileCsvPath) {
-	# Load or initialize cache
-	$added_pairs = Load-Cache
+$addedPairs = Get-CacheData
 
-	Import-Csv -Path $InputFileCsvPath | ForEach-Object {
-		$UserName = $_.user
-		$RoleName = $_.role
-		Write-Host "$UserName assigned to $RoleName"
+Import-Csv -Path $InputFileCsvPath | ForEach-Object {
+    $userName = $_.user
+    $roleName = $_.role
+    $cacheKey = "$userName,$roleName"
 
-		if ($added_pairs -notcontains @($UserName, $RoleName)) {
-			$UserId, $DirectoryUUID = Search-DS -username $UserName
-			if ($UserId) {
-                Add-UserToRole -userkey $UserId -rolename $RoleName -username $UserName -DirectoryUUID $DirectoryUUID
-                $added_pairs += ,@($UserName, $RoleName)
-                Save-Cache -Cache $added_pairs
-            } else {
-                Write-Host "No user found for $UserName."
-            }
-		} else {
-			Write-Host "Skipping $UserName for role $RoleName as it has already been added."
-		}
-	}
+    Write-Host "Processing $userName for role $roleName."
+
+    if (-not $addedPairs.ContainsKey($cacheKey)) {
+        $userId, $directoryUUID = Search-DS -username $userName
+        if ($userId) {
+            Add-UserToRole -userKey $userId -roleName $roleName -userName $userName -directoryUUID $directoryUUID
+            $addedPairs[$cacheKey] = $true
+        } else {
+            Write-Host "No user found for $userName."
+        }
+    } else {
+        Write-Host "Skipping $userName for role $roleName as it has already been added."
+    }
 }
+
+Save-CacheData -Cache $addedPairs.Keys
+
 
 
 if ($InputFileCsvPath) {
