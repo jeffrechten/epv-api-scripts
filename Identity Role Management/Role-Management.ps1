@@ -44,6 +44,8 @@ param(
     [switch]$AddRoleOnUpdate
 )
 
+$cacheFilePath = ".\cacheFile.csv"
+
 # Check if the user passes either the RoleName or passes $InputFileCsvPath
 if (!$RoleName -and !$InputFileCsvPath) {
     Write-Error "Please pass either the RoleName / UserName or the InputFileCsvPath."
@@ -376,6 +378,50 @@ function Add-UserToRoleOld ($userkey, $rolename) {
         #Write-Host ($response | ConvertTo-Json)
     }
 }
+
+function Load-Cache {
+    if (Test-Path $cacheFilePath) {
+        $choice = Read-Host "Cache file found. Do you want to use cached data to skip previously added entries? (Y/N)"
+        if ($choice -eq 'Y') {
+            return Import-Csv -Path $cacheFilePath
+        }
+    }
+    return @()
+}
+
+function Save-Cache {
+    Param(
+        [Parameter(Mandatory=$true)]
+        [System.Collections.ArrayList]$Cache
+    )
+
+    $Cache | Export-Csv -Path $cacheFilePath -NoTypeInformation
+}
+
+if ($InputFileCsvPath) {
+	# Load or initialize cache
+	$added_pairs = Load-Cache
+
+	Import-Csv -Path $InputFileCsvPath | ForEach-Object {
+		$UserName = $_.user
+		$RoleName = $_.role
+		Write-Host "$UserName assigned to $RoleName"
+
+		if ($added_pairs -notcontains @($UserName, $RoleName)) {
+			$UserId, $DirectoryUUID = Search-DS -username $UserName
+			if ($UserId) {
+                Add-UserToRole -userkey $UserId -rolename $RoleName -username $UserName -DirectoryUUID $DirectoryUUID
+                $added_pairs += ,@($UserName, $RoleName)
+                Save-Cache -Cache $added_pairs
+            } else {
+                Write-Host "No user found for $UserName."
+            }
+		} else {
+			Write-Host "Skipping $UserName for role $RoleName as it has already been added."
+		}
+	}
+}
+
 
 if ($InputFileCsvPath) {
 	# Read CSV and process each row
