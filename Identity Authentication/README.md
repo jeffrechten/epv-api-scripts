@@ -48,7 +48,7 @@ Format output in a psPAS-compatible format. Only run $header once based on type 
 ```powershell
 Import-Module IdentityAuth.psm1
 $header = Get-IdentityHeader -IdentityTenantURL "something.id.cyberark.cloud" -psPASFormat -PCloudSubdomain "subdomain" -IdentityUserName "UserToAuthenticate@cyberark.cloud.ID"
-$header = Get-IdentityHeader -IdentityTenantURL "something.id.cyberark.cloud" -psPASFormat -PCloudSubdomain "subdomain" -UPCreds $UPCreds -PCloudSubdomain "subdomain"
+$header = Get-IdentityHeader -IdentityTenantURL "something.id.cyberark.cloud" -psPASFormat -PCloudSubdomain "subdomain" -UPCreds $UPCreds
 $header = Get-IdentityHeader -IdentityTenantURL "something.id.cyberark.cloud" -psPASFormat -PCloudSubdomain "subdomain" -OAuthCreds $OAuth 
 use-PASSession $header
 ```
