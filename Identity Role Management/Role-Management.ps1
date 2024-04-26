@@ -127,7 +127,7 @@ function Get-OAuth2Token {
     }
 }
 
-
+<##
 function Get-NewOauth2Token {
     param (
         [string]$token_url,
@@ -154,7 +154,7 @@ function Get-NewOauth2Token {
         return $null
     }
 }
-
+##>
 
 # If token is not provided, prompt for client_id and client_secret
 if (!$token) {
