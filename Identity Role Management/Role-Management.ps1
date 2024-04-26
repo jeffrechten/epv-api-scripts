@@ -53,7 +53,11 @@ if (!$RoleName -and !$InputFileCsvPath) {
 }
 
 # Check if the user passes only one of AddRole, AddRoleMember, or RemoveRoleMember, or InputFileCsvPath
-$actionCount = [int]$AddRole.IsPresent + [int]$AddRoleMember.IsPresent + [int]$RemoveRoleMember.IsPresent + [int]$InputFileCsvPath.IsPresent
+$actionCount = [int]$AddRole.IsPresent + [int]$AddRoleMember.IsPresent + [int]$RemoveRoleMember.IsPresent
+if (![string]::IsNullOrWhiteSpace($InputFileCsvPath)) {
+    $actionCount++
+}
+
 if ($actionCount -ne 1) {
     Write-Error "Please pass only one of AddRole, AddRoleMember, RemoveRoleMember, or InputFileCsvPath."
     return
@@ -85,10 +89,10 @@ if (Resolve-DnsName -Name $tenant_url1 -ErrorAction SilentlyContinue) {
     return
 }
 
-
+<#
 # Get New Oauth2 Token only if needed
 # Note, this script only supports OAuth2 Client Credentials Grant (Backend Application flow)
-function Get-OAuth2Token {
+function Get-NewOAuth2Token {
     [CmdletBinding()]
     param (
         [Parameter(Mandatory = $true)]
@@ -126,8 +130,8 @@ function Get-OAuth2Token {
         return $null
     }
 }
+#>
 
-<##
 function Get-NewOauth2Token {
     param (
         [string]$token_url,
@@ -136,7 +140,7 @@ function Get-NewOauth2Token {
         [string]$client_secret
     )
     try {
-        $pair = "$client_id:$client_secret"
+        $pair = "$($client_id):$($client_secret)"
         $encodedCreds = [System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes($pair))
         $basicAuthValue = "Basic $encodedCreds"
         $headers = @{
@@ -154,7 +158,7 @@ function Get-NewOauth2Token {
         return $null
     }
 }
-##>
+
 
 # If token is not provided, prompt for client_id and client_secret
 if (!$token) {
@@ -393,35 +397,44 @@ function Get-CacheData {
 }
 
 function Save-CacheData ($Cache) {
-    $Cache | ConvertFrom-StringData | Export-Csv -Path $cacheFilePath -NoTypeInformation
-}
-
-$addedPairs = Get-CacheData
-
-Import-Csv -Path $InputFileCsvPath | ForEach-Object {
-    $userName = $_.user
-    $roleName = $_.role
-    $cacheKey = "$userName,$roleName"
-
-    Write-Host "Processing $userName for role $roleName."
-
-    if (-not $addedPairs.ContainsKey($cacheKey)) {
-        $userId, $directoryUUID = Search-DS -username $userName
-        if ($userId) {
-            Add-UserToRole -userKey $userId -roleName $roleName -userName $userName -directoryUUID $directoryUUID
-            $addedPairs[$cacheKey] = $true
-        } else {
-            Write-Host "No user found for $userName."
+    $Cache | ForEach-Object {
+        $keyValue = $_.Split(',')
+        [PSCustomObject]@{
+            UserName = $keyValue
+            RoleName = $keyValue
         }
-    } else {
-        Write-Host "Skipping $userName for role $roleName as it has already been added."
-    }
+    } | Export-Csv -Path $cacheFilePath -NoTypeInformation
 }
 
-Save-CacheData -Cache $addedPairs.Keys
 
 
 
+if ($InputFileCsvPath) {
+    $addedPairs = Get-CacheData
+    Import-Csv -Path $InputFileCsvPath | ForEach-Object {
+        $userName = $_.user
+        $roleName = $_.role
+        $cacheKey = "$userName,$roleName"
+
+        Write-Host "Processing $userName for role $roleName."
+
+        if (-not $addedPairs.ContainsKey($cacheKey)) {
+            $userId, $directoryUUID = Search-DS -username $userName
+            if ($userId) {
+                Add-UserToRole -userKey $userId -roleName $roleName -userName $userName -directoryUUID $directoryUUID
+                $addedPairs[$cacheKey] = $true
+            } else {
+                Write-Host "No user found for $userName."
+            }
+        } else {
+            Write-Host "Skipping $userName for role $roleName as it has already been added."
+        }
+    }
+
+    Save-CacheData -Cache $addedPairs.Keys
+}
+
+<##
 if ($InputFileCsvPath) {
 	# Read CSV and process each row
 	$added_pairs = @()
@@ -442,7 +455,7 @@ if ($InputFileCsvPath) {
 		}
 	}
 }
-
+#>
 if ($AddRole) {
 	Add-Role -rolename $RoleName -description ""
 }
