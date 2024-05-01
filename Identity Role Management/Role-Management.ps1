@@ -14,7 +14,10 @@
 # Usage examples
 #  .\role-management.ps1 -tenant_id abc1234 -client_id radius_rest_user@cyberark.com.1234 -published_app_name Oauth2Client123 -scope_name All -RoleName TestRole123 -AddRole
 #  .\role-management.ps1 -tenant_id abc1234 -client_id radius_rest_user@cyberark.com.1234 -published_app_name Oauth2Client123 -scope_name All -RoleName TestRole123 -UserName "test02@cybr.com" -AddRoleMember
-
+#
+# Import-Module ..\"Identity Authentication"\IdentityAuth.psm1
+# $header = Get-IdentityHeader -IdentityTenantURL "something.id.cyberark.cloud" -IdentityUserName "UserToAuthenticate@cyberark.cloud.ID"
+# .\role-management.ps1 -tenant_id abc1234 -token $header -RoleName TestRole123 -AddRole
 
 
 param(
